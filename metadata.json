@@ -1,0 +1,5 @@
+{
+  "name": "LingoReader Local",
+  "description": "A local-first e-book reader with AI-powered translation and text-to-speech capabilities. Works offline for reading, uses Gemini for language tools.",
+  "requestFramePermissions": []
+}
