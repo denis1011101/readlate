@@ -1,52 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Library from './components/Library';
 import Reader from './components/Reader';
 import { Book } from './types';
 import { getBooks } from './services/storage';
+import { useTheme } from './hooks/useTheme';
 
 const App: React.FC = () => {
   const [currentBook, setCurrentBook] = useState<Book | null>(null);
-  const [books, setBooks] = useState<Book[]>([]);
-  const [isDarkMode, setIsDarkMode] = useState(false);
-
-  // Load theme preference: saved choice wins, otherwise follow the system
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('lingoreader_theme');
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    if (savedTheme === 'dark' || savedTheme === 'light') {
-      setIsDarkMode(savedTheme === 'dark');
-      return;
-    }
-    setIsDarkMode(media.matches);
-    const onChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
-    media.addEventListener('change', onChange);
-    return () => media.removeEventListener('change', onChange);
-  }, []);
-
-  // Keep the document itself in sync so body background, scrollbars and
-  // native controls match the theme (avoids a white flash around the app)
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', isDarkMode);
-    document.documentElement.style.colorScheme = isDarkMode ? 'dark' : 'light';
-    document.querySelector('meta[name="theme-color"]')
-      ?.setAttribute('content', isDarkMode ? '#020617' : '#f8fafc');
-  }, [isDarkMode]);
-
-  const toggleTheme = () => {
-    setIsDarkMode(prev => {
-      const newVal = !prev;
-      localStorage.setItem('lingoreader_theme', newVal ? 'dark' : 'light');
-      return newVal;
-    });
-  };
+  const [books, setBooks] = useState<Book[]>(getBooks);
+  const { isDarkMode, toggleTheme } = useTheme();
 
   const refreshLibrary = () => {
     setBooks(getBooks());
   };
-
-  useEffect(() => {
-    refreshLibrary();
-  }, []);
 
   const handleSelectBook = (book: Book) => {
     setCurrentBook(book);

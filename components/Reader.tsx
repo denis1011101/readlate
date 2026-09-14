@@ -30,13 +30,15 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
     text: '', top: 0, left: 0, show: false
   });
   const [translation, setTranslation] = useState<TranslationResult | null>(null);
-  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showControls, setShowControls] = useState(true);
 
-  // Initialize Audio Context
-  useEffect(() => {
-    setAudioContext(new (window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext!)({ sampleRate: 24000 }));
+  // Create audio only on a user gesture, and release it when leaving the reader.
+  useEffect(() => () => {
+    const context = audioContextRef.current;
+    audioContextRef.current = null;
+    if (context) void context.close().catch(console.error);
   }, []);
 
   // Calculate Layout (Pages & Margins)
@@ -165,7 +167,14 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
   const handleSpeak = async (text: string) => {
     setIsPlaying(true);
     try {
-      if (navigator.onLine && audioContext) {
+      if (navigator.onLine) {
+        const AudioContextClass = window.AudioContext
+          || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioContextClass) throw new Error('Web Audio is unavailable');
+        const audioContext = audioContextRef.current
+          ?? new AudioContextClass({ sampleRate: 24000 });
+        audioContextRef.current = audioContext;
+        await audioContext.resume();
         const audioBufferData = await generateSpeech(text);
         const audioBuffer = await audioContext.decodeAudioData(audioBufferData);
         const source = audioContext.createBufferSource();

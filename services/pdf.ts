@@ -1,9 +1,19 @@
-// Simple wrapper around the global pdfjsLib loaded in index.html
+// Minimal boundary for the PDF.js browser build loaded in index.html.
+interface PdfTextItem { str: string }
+interface PdfMarkedContent { type: string }
+interface PdfDocument {
+  numPages: number;
+  getPage(page: number): Promise<{
+    getTextContent(): Promise<{ items: Array<PdfTextItem | PdfMarkedContent> }>;
+  }>;
+}
+declare const pdfjsLib: {
+  getDocument(data: ArrayBuffer): { promise: Promise<PdfDocument> };
+};
 
 export const extractTextFromPdf = async (file: File): Promise<string> => {
   try {
     const arrayBuffer = await file.arrayBuffer();
-    // @ts-ignore - pdfjsLib is loaded via CDN globally
     const loadingTask = pdfjsLib.getDocument(arrayBuffer);
     const pdf = await loadingTask.promise;
     
@@ -14,8 +24,8 @@ export const extractTextFromPdf = async (file: File): Promise<string> => {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
       const pageText = textContent.items
-        // @ts-ignore
-        .map((item) => item.str)
+        .filter((item): item is PdfTextItem => 'str' in item)
+        .map(item => item.str)
         .join(' ');
       
       fullText += pageText + '\n\n';
