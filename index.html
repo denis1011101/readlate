@@ -4,6 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LingoReader</title>
+    <meta name="theme-color" content="#f8fafc" />
+    <meta name="description" content="Local-first e-book reader for language learners with Gemini translation and text-to-speech" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <script>
+      // Apply the theme before first paint to avoid a white flash
+      (function () {
+        var saved = localStorage.getItem('lingoreader_theme');
+        var dark = saved === 'dark' || (saved !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.classList.add('dark');
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+      })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <!-- PDF.js -->
@@ -17,6 +31,9 @@
         font-family: 'Inter', sans-serif;
         background-color: #f8fafc;
         overflow: hidden; /* Prevent body scroll for app-like feel */
+      }
+      html.dark body {
+        background-color: #020617;
       }
       .font-serif {
         font-family: 'Merriweather', serif;

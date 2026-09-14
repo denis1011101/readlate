@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e0e7ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <!-- open book -->
+  <path d="M32 19 C27 15.5 20 15 13 16.5 V45 C20 43.5 27 44 32 47.5 Z" fill="url(#page)"/>
+  <path d="M32 19 C37 15.5 44 15 51 16.5 V45 C44 43.5 37 44 32 47.5 Z" fill="url(#page)" opacity="0.92"/>
+  <path d="M32 19 V47.5" stroke="#6366f1" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- text lines -->
+  <g stroke="#818cf8" stroke-width="2" stroke-linecap="round" opacity="0.85">
+    <path d="M18 24 H27"/><path d="M18 30 H27"/><path d="M18 36 H24"/>
+    <path d="M37 24 H46"/><path d="M37 30 H46"/><path d="M37 36 H43"/>
+  </g>
+  <!-- speech / sound badge -->
+  <circle cx="49" cy="15" r="10.5" fill="#10b981" stroke="#ffffff" stroke-width="2.5"/>
+  <g fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round">
+    <path d="M44.5 12.5 V17.5 L47.5 15 Z" fill="#ffffff"/>
+    <path d="M50.5 12 A4.2 4.2 0 0 1 50.5 18"/>
+    <path d="M53.3 9.8 A7.5 7.5 0 0 1 53.3 20.2"/>
+  </g>
+</svg>
