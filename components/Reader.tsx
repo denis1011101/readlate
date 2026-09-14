@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Book, SelectionState, TranslationResult } from '../types';
+import { Book, SelectionState, TranslationResult, formatProgress } from '../types';
 import { updateBookProgress } from '../services/storage';
 import Tooltip from './Tooltip';
 import { translateText, generateSpeech, browserSpeak } from '../services/geminiService';
@@ -18,6 +18,9 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
   const [fontSize, setFontSize] = useState(18);
   const [totalPages, setTotalPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
+  // Live progress; `book.progress` is only the value at open time
+  const [progress, setProgress] = useState(book.progress);
+  const progressRef = useRef(book.progress);
   
   // Layout State
   const [columnStyle, setColumnStyle] = useState({ width: '100vw', gap: '0px', padding: '0px' });
@@ -33,7 +36,7 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
 
   // Initialize Audio Context
   useEffect(() => {
-    setAudioContext(new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 }));
+    setAudioContext(new (window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext!)({ sampleRate: 24000 }));
   }, []);
 
   // Calculate Layout (Pages & Margins)
@@ -65,15 +68,16 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
       const pages = Math.round(newScrollWidth / clientWidth);
       setTotalPages(Math.max(1, pages));
       
-      // Restore progress
-      if (book.progress > 0) {
-        const targetPage = Math.max(1, Math.round((book.progress / 100) * pages));
+      // Restore progress (also keeps the place on resize / font change)
+      if (progressRef.current > 0) {
+        // Inverse of the formula in handleScroll: progress = (page - 1) / (pages - 1)
+        const targetPage = Math.min(pages, Math.max(1, Math.round((progressRef.current / 100) * (pages - 1)) + 1));
         setCurrentPage(targetPage);
         // Instant scroll to position without animation
         containerRef.current.scrollLeft = (targetPage - 1) * clientWidth;
       }
     });
-  }, [book.progress]);
+  }, []);
 
   // Initial load and resize handler
   useEffect(() => {
@@ -101,8 +105,10 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
         // Calculate progress percentage
         // Avoid division by zero
         const maxScroll = scrollWidth - clientWidth;
-        const progress = maxScroll > 0 ? (scrollLeft / maxScroll) * 100 : 0;
-        updateBookProgress(book.id, progress);
+        const newProgress = maxScroll > 0 ? Math.min(100, (scrollLeft / maxScroll) * 100) : 0;
+        progressRef.current = newProgress;
+        setProgress(newProgress);
+        updateBookProgress(book.id, newProgress);
       }
     }
   }, [book.id, currentPage]);
@@ -151,7 +157,7 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
     try {
       const result = await translateText(text);
       setTranslation({ original: text, translated: result, isLoading: false });
-    } catch (e) {
+    } catch {
       setTranslation({ original: text, translated: '', isLoading: false, error: 'Offline or Error' });
     }
   };
@@ -179,7 +185,7 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
   };
 
   // Toggle controls on click (unless selecting text)
-  const handleContentClick = (e: React.MouseEvent) => {
+  const handleContentClick = () => {
     if (window.getSelection()?.toString()) return;
     setShowControls(!showControls);
   };
@@ -277,7 +283,7 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
       <div 
         className={`absolute bottom-0 left-0 right-0 p-3 text-center text-xs z-20 transition-transform duration-300 ${showControls ? 'translate-y-0' : 'translate-y-full'} ${isDarkModeGlobal ? 'text-slate-500 bg-slate-900/90' : 'text-slate-400 bg-white/90'} border-t ${isDarkModeGlobal ? 'border-slate-800' : 'border-gray-100'}`}
       >
-        Page {currentPage} of {totalPages} • {Math.round(book.progress)}%
+        Page {currentPage} of {totalPages} • {formatProgress(progress)}
       </div>
 
       <Tooltip 

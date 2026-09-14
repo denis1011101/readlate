@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Book } from '../types';
+import { Book, formatProgress } from '../types';
 import { deleteBook, saveBook } from '../services/storage';
 import { extractTextFromPdf } from '../services/pdf';
 
@@ -133,11 +133,11 @@ const Library: React.FC<LibraryProps> = ({ books, onSelectBook, onRefresh, isDar
                 <div className={`w-full ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'} rounded-full h-1.5 mb-1`}>
                   <div 
                     className="bg-indigo-500 h-1.5 rounded-full transition-all duration-500" 
-                    style={{ width: `${book.progress}%` }}
+                    style={{ width: book.progress > 0 ? `${Math.max(1, book.progress)}%` : 0 }}
                   ></div>
                 </div>
                 <div className="text-right text-xs text-indigo-500 font-medium">
-                  {Math.round(book.progress)}% complete
+                  {formatProgress(book.progress)} complete
                 </div>
               </div>
             ))}
