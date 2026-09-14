@@ -179,3 +179,73 @@ it('pages with the keyboard and snaps to page boundaries', () => {
   fireEvent.keyDown(document, { key: 'PageUp' });
   expect(scrollTo).toHaveBeenLastCalledWith({ left: 0, behavior: 'smooth' });
 });
+
+it('accumulates small trackpad deltas instead of locking on the first tiny event', () => {
+  vi.useFakeTimers();
+  try {
+    const { scroller, scrollTo } = mountScroller();
+    for (const deltaX of [1, 2, 12, 40, 20]) {
+      fireEvent.wheel(scroller, { deltaX, deltaY: 0 });
+      vi.advanceTimersByTime(20);
+    }
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenLastCalledWith({ left: 1000, behavior: 'smooth' });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('normalizes line- and page-based wheel deltas', () => {
+  vi.useFakeTimers();
+  try {
+    const { scroller, scrollTo } = mountScroller();
+    fireEvent.wheel(scroller, { deltaY: 3, deltaMode: 1 }); // three lines
+    expect(scrollTo).toHaveBeenLastCalledWith({ left: 1000, behavior: 'smooth' });
+    vi.advanceTimersByTime(250);
+    fireEvent.wheel(scroller, { deltaY: -1, deltaMode: 2 }); // one page back
+    expect(scrollTo).toHaveBeenLastCalledWith({ left: 0, behavior: 'smooth' });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('warns again on a later save failure after a successful save', () => {
+  vi.useFakeTimers();
+  try {
+    let fail = true;
+    const realSetItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k, v) {
+      if (fail) throw new Error('QuotaExceededError');
+      realSetItem.call(this, k, v);
+    });
+    const onBack = vi.fn();
+    const book = { id: 'book', title: 'Book', content: 'Text', progress: 0, createdAt: 0 };
+    const { container } = render(
+      <Reader book={book} onBack={onBack} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} />,
+    );
+    const scroller = container.querySelector('.overflow-x-auto') as HTMLDivElement;
+    Object.defineProperty(scroller, 'clientWidth', { value: 1000 });
+    Object.defineProperty(scroller, 'scrollWidth', { value: 3000 });
+    Object.defineProperty(scroller, 'scrollLeft', { value: 1000, writable: true });
+
+    // First failure: warned, stays
+    fireEvent.scroll(scroller);
+    fireEvent.click(screen.getByRole('button', { name: /Library/ }));
+    expect(onBack).not.toHaveBeenCalled();
+
+    // Keep reading, storage recovers, save succeeds
+    fail = false;
+    fireEvent.scroll(scroller);
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(screen.queryByText(/Progress not saved/)).toBeNull();
+
+    // New failure on exit must warn again rather than leave
+    fail = true;
+    fireEvent.scroll(scroller);
+    fireEvent.click(screen.getByRole('button', { name: /Library/ }));
+    expect(onBack).not.toHaveBeenCalled();
+    expect(screen.getByText(/click Library again/)).toBeTruthy();
+  } finally {
+    vi.useRealTimers();
+  }
+});

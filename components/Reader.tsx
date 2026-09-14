@@ -120,7 +120,10 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
 
   const persistProgress = useCallback((value: number) => {
     setProgress(value);
-    setProgressSaveFailed(!updateBookProgress(book.id, value));
+    const saved = updateBookProgress(book.id, value);
+    setProgressSaveFailed(!saved);
+    // A later failure must warn again before letting the reader leave
+    if (saved) setLeaveAnyway(false);
   }, [book.id]);
 
   // Handle Scroll (Page Turn Detection). Smooth scrolling fires many events
@@ -134,6 +137,7 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
 
     const maxScroll = scrollWidth - clientWidth;
     progressRef.current = maxScroll > 0 ? Math.min(100, (scrollLeft / maxScroll) * 100) : 0;
+    setLeaveAnyway(false);
 
     if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
     persistTimerRef.current = setTimeout(() => {
@@ -172,27 +176,38 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
     });
   }, []);
 
-  // Wheel / trackpad: one gesture turns exactly one page. Trackpads keep
-  // emitting inertia events after the fingers lift, so stay locked until the
-  // stream goes quiet instead of using a fixed cooldown.
-  const wheelLockRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Wheel / trackpad: one gesture turns exactly one page. Movement is
+  // accumulated until it crosses a threshold (trackpads start with tiny
+  // deltas), then the handler locks; trackpads keep emitting inertia events
+  // after the fingers lift, so it unlocks only once the stream goes quiet.
+  const wheelRef = useRef<{ accumulated: number; turned: boolean; quiet: ReturnType<typeof setTimeout> | null }>({
+    accumulated: 0, turned: false, quiet: null,
+  });
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    const WHEEL_THRESHOLD_PX = 20;
+    const state = wheelRef.current;
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey) return; // pinch-zoom
       e.preventDefault();
-      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      const locked = wheelLockRef.current !== null;
-      if (wheelLockRef.current) clearTimeout(wheelLockRef.current);
-      wheelLockRef.current = setTimeout(() => { wheelLockRef.current = null; }, 200);
-      if (locked || Math.abs(delta) < 4) return;
-      turnPage(delta > 0 ? 'next' : 'prev');
+      const raw = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      // deltaMode: 0 = pixels, 1 = lines, 2 = pages
+      const delta = e.deltaMode === 1 ? raw * 20 : e.deltaMode === 2 ? raw * container.clientWidth : raw;
+
+      if (state.quiet) clearTimeout(state.quiet);
+      state.quiet = setTimeout(() => { state.accumulated = 0; state.turned = false; state.quiet = null; }, 200);
+      if (state.turned) return;
+
+      state.accumulated += delta;
+      if (Math.abs(state.accumulated) < WHEEL_THRESHOLD_PX) return;
+      state.turned = true;
+      turnPage(state.accumulated > 0 ? 'next' : 'prev');
     };
     container.addEventListener('wheel', onWheel, { passive: false });
     return () => {
       container.removeEventListener('wheel', onWheel);
-      if (wheelLockRef.current) clearTimeout(wheelLockRef.current);
+      if (state.quiet) clearTimeout(state.quiet);
     };
   }, [turnPage]);
 
