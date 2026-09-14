@@ -25,7 +25,7 @@ it('creates audio on Listen and releases the context when leaving the reader', a
   const book = { id: 'book', title: 'Book', content: 'Select these words', progress: 0, createdAt: 0 };
   const { unmount } = render(
     <StrictMode>
-      <Reader book={book} onBack={() => undefined} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} />
+      <Reader book={book} onBack={() => undefined} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} targetLanguage="ru" />
     </StrictMode>,
   );
   expect(AudioContextMock).not.toHaveBeenCalled();
@@ -53,7 +53,7 @@ it('saves the position where scrolling settles, not a mid-flight one', () => {
     ]));
     const book = { id: 'book', title: 'Book', content: 'Text', progress: 0, createdAt: 0 };
     const { container, unmount } = render(
-      <Reader book={book} onBack={() => undefined} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} />,
+      <Reader book={book} onBack={() => undefined} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} targetLanguage="ru" />,
     );
     const scroller = container.querySelector('.overflow-x-auto') as HTMLDivElement;
     Object.defineProperty(scroller, 'clientWidth', { value: 1000 });
@@ -88,7 +88,7 @@ it('tells the reader when progress could not be saved', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('QuotaExceededError'); });
     const book = { id: 'book', title: 'Book', content: 'Text', progress: 0, createdAt: 0 };
     const { container } = render(
-      <Reader book={book} onBack={() => undefined} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} />,
+      <Reader book={book} onBack={() => undefined} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} targetLanguage="ru" />,
     );
     const scroller = container.querySelector('.overflow-x-auto') as HTMLDivElement;
     Object.defineProperty(scroller, 'clientWidth', { value: 1000 });
@@ -109,7 +109,7 @@ it('does not leave silently when the final save fails', () => {
     const onBack = vi.fn();
     const book = { id: 'book', title: 'Book', content: 'Text', progress: 0, createdAt: 0 };
     const { container } = render(
-      <Reader book={book} onBack={onBack} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} />,
+      <Reader book={book} onBack={onBack} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} targetLanguage="ru" />,
     );
     const scroller = container.querySelector('.overflow-x-auto') as HTMLDivElement;
     Object.defineProperty(scroller, 'clientWidth', { value: 1000 });
@@ -130,7 +130,7 @@ it('does not leave silently when the final save fails', () => {
 const mountScroller = () => {
   const book = { id: 'book', title: 'Book', content: 'Text', progress: 0, createdAt: 0 };
   const { container } = render(
-    <Reader book={book} onBack={() => undefined} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} />,
+    <Reader book={book} onBack={() => undefined} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} targetLanguage="ru" />,
   );
   const scroller = container.querySelector('.overflow-x-auto') as HTMLDivElement;
   Object.defineProperty(scroller, 'clientWidth', { value: 1000 });
@@ -221,7 +221,7 @@ it('warns again on a later save failure after a successful save', () => {
     const onBack = vi.fn();
     const book = { id: 'book', title: 'Book', content: 'Text', progress: 0, createdAt: 0 };
     const { container } = render(
-      <Reader book={book} onBack={onBack} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} />,
+      <Reader book={book} onBack={onBack} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} targetLanguage="ru" />,
     );
     const scroller = container.querySelector('.overflow-x-auto') as HTMLDivElement;
     Object.defineProperty(scroller, 'clientWidth', { value: 1000 });
@@ -248,4 +248,20 @@ it('warns again on a later save failure after a successful save', () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+it('translates into the selected language', async () => {
+  const { translateText } = await import('../services/geminiService');
+  vi.mocked(translateText).mockResolvedValue('Hallo');
+  const book = { id: 'book', title: 'Book', content: 'Hello there', progress: 0, createdAt: 0 };
+  render(<Reader book={book} onBack={() => undefined} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} targetLanguage="de" />);
+  const range = document.createRange();
+  range.selectNodeContents(await screen.findByText(book.content));
+  Object.defineProperty(range, 'getBoundingClientRect', { value: () => ({ top: 100, left: 100, width: 100 }) });
+  window.getSelection()!.removeAllRanges();
+  window.getSelection()!.addRange(range);
+  fireEvent.mouseUp(screen.getByText(book.content));
+  fireEvent.click(screen.getByRole('button', { name: 'Translate' }));
+  await waitFor(() => expect(screen.getByText('Hallo')).toBeTruthy());
+  expect(translateText).toHaveBeenCalledWith('Hello there', 'German');
 });

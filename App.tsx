@@ -4,11 +4,18 @@ import Reader from './components/Reader';
 import { Book } from './types';
 import { getBooks } from './services/storage';
 import { useTheme } from './hooks/useTheme';
+import { getTargetLanguage, setTargetLanguage, LanguageCode } from './services/languages';
 
 const App: React.FC = () => {
   const [currentBook, setCurrentBook] = useState<Book | null>(null);
   const [books, setBooks] = useState<Book[]>(getBooks);
   const { isDarkMode, toggleTheme } = useTheme();
+  const [targetLanguage, setTargetLanguageState] = useState<LanguageCode>(getTargetLanguage);
+
+  const changeTargetLanguage = (code: LanguageCode) => {
+    setTargetLanguage(code);
+    setTargetLanguageState(code);
+  };
 
   const refreshLibrary = () => {
     setBooks(getBooks());
@@ -33,6 +40,7 @@ const App: React.FC = () => {
           onBack={handleBack} 
           isDarkModeGlobal={isDarkMode}
           toggleGlobalTheme={toggleTheme}
+          targetLanguage={targetLanguage}
         />
       ) : (
         <Library 
@@ -41,6 +49,8 @@ const App: React.FC = () => {
           onRefresh={refreshLibrary} 
           isDarkMode={isDarkMode}
           toggleTheme={toggleTheme}
+          targetLanguage={targetLanguage}
+          onChangeTargetLanguage={changeTargetLanguage}
         />
       )}
     </div>

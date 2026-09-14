@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Book, formatProgress } from '../types';
 import { deleteBook, saveBook } from '../services/storage';
 import { extractTextFromPdf } from '../services/pdf';
+import { LANGUAGES, LanguageCode, isLanguageCode } from '../services/languages';
 
 interface LibraryProps {
   books: Book[];
@@ -9,9 +10,13 @@ interface LibraryProps {
   onRefresh: () => void;
   isDarkMode: boolean;
   toggleTheme: () => void;
+  targetLanguage: LanguageCode;
+  onChangeTargetLanguage: (code: LanguageCode) => void;
 }
 
-const Library: React.FC<LibraryProps> = ({ books, onSelectBook, onRefresh, isDarkMode, toggleTheme }) => {
+const Library: React.FC<LibraryProps> = ({
+  books, onSelectBook, onRefresh, isDarkMode, toggleTheme, targetLanguage, onChangeTargetLanguage,
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -68,6 +73,20 @@ const Library: React.FC<LibraryProps> = ({ books, onSelectBook, onRefresh, isDar
           </div>
           
           <div className="flex gap-3">
+            <label className={`flex items-center gap-2 rounded-lg border px-3 text-sm ${isDarkMode ? 'border-slate-700 text-slate-300 bg-slate-900' : 'border-slate-300 text-slate-600 bg-white'}`}>
+              <span className="hidden sm:inline">Translate to</span>
+              <select
+                aria-label="Translation language"
+                value={targetLanguage}
+                onChange={e => { if (isLanguageCode(e.target.value)) onChangeTargetLanguage(e.target.value); }}
+                className="bg-transparent py-2 outline-none cursor-pointer"
+              >
+                {LANGUAGES.map(l => (
+                  <option key={l.code} value={l.code}>{l.native}</option>
+                ))}
+              </select>
+            </label>
+
             <button 
                onClick={toggleTheme}
                className={`p-2.5 rounded-lg border transition-colors ${isDarkMode ? 'border-slate-700 text-yellow-400 hover:bg-slate-800' : 'border-slate-300 text-slate-600 hover:bg-white'}`}

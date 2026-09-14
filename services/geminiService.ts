@@ -6,13 +6,14 @@ import { parsePcmMimeType, PcmAudio } from "./audio";
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
- * Translates English text to Russian using Gemini Flash.
+ * Translates text into the given language using Gemini Flash; the source
+ * language is detected by the model.
  */
-export const translateText = async (text: string): Promise<string> => {
+export const translateText = async (text: string, targetLanguage: string = 'Russian'): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: `Translate the following English text to Russian. Provide ONLY the translation, no explanations: "${text}"`,
+      contents: `Translate the following text to ${targetLanguage}. Provide ONLY the translation, no explanations: "${text}"`,
     });
     
     return response.text || "Could not translate.";

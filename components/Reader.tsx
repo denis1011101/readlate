@@ -5,15 +5,17 @@ import Tooltip from './Tooltip';
 import { translateText, generateSpeech, browserSpeak } from '../services/geminiService';
 import { pcmToAudioBuffer } from '../services/audio';
 import { selectWordAt, snapSelectionToWords } from '../utils/selectWordAt';
+import { LanguageCode, languageName } from '../services/languages';
 
 interface ReaderProps {
   book: Book;
   onBack: () => void;
   isDarkModeGlobal: boolean;
   toggleGlobalTheme: () => void;
+  targetLanguage: LanguageCode;
 }
 
-const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleGlobalTheme }) => {
+const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleGlobalTheme, targetLanguage }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   
   // Settings
@@ -259,7 +261,7 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
   const handleTranslate = async (text: string) => {
     setTranslation({ original: text, translated: '', isLoading: true });
     try {
-      const result = await translateText(text);
+      const result = await translateText(text, languageName(targetLanguage));
       setTranslation({ original: text, translated: result, isLoading: false });
     } catch {
       setTranslation({ original: text, translated: '', isLoading: false, error: 'Offline or Error' });
