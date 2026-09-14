@@ -1,24 +1,31 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Readlate
 
-# Run and deploy your AI Studio app
+Local-first e-book reader for language learners. Import a PDF, read it in a
+paged layout, click a word or drag across a phrase to get an instant
+English→Russian translation and hear it read aloud by Gemini TTS (falls back to
+the browser's own voice offline). Everything runs in the browser; books and
+reading progress stay in `localStorage`.
 
-This contains everything you need to run your app locally.
+**Live:** https://denis1011101.github.io/readlate/
 
-View your app in AI Studio: https://ai.studio/apps/drive/1DjZTsUltQ3ZNpiisRdux-bZtb3FgpALa
+## Features
 
-## Run Locally
+- PDF import (text extraction via PDF.js), library with reading progress
+- Paged reading with adjustable font size; position is restored on reopen
+- Click selects a word, dragging snaps the selection to whole words
+- Translate / Listen tooltip powered by Gemini (`gemini-2.5-flash` and
+  `gemini-2.5-flash-preview-tts`)
+- Light/dark theme following the system, with a manual override
 
-**Prerequisites:**  Node.js
+## Run locally
 
+Requires Node.js 22.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
-
+```sh
+npm install
+echo "GEMINI_API_KEY=your-key" > .env.local
+npm run dev
+```
 
 ## Development checks
 
@@ -42,7 +49,7 @@ to `main` and manual deployments call the same checks before building and
 publishing GitHub Pages. Failed checks prevent deployment. To also block merging
 failing pull requests, make the CI check required in the repository branch rules.
 
-## Structure
+## Project structure
 
 - `App.tsx`: library/reader navigation and shared state.
 - `components/`: library, reader, and selection tooltip UI.

@@ -1,5 +1,6 @@
 import { Book } from '../types';
 
+// Storage keys keep the app's original name so existing libraries survive the rename
 const STORAGE_KEY = 'lingoreader_books';
 // Progress lives in its own small key so page turns don't rewrite book contents
 const PROGRESS_KEY = 'lingoreader_progress';
