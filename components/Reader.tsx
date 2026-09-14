@@ -3,6 +3,8 @@ import { Book, SelectionState, TranslationResult, formatProgress } from '../type
 import { updateBookProgress } from '../services/storage';
 import Tooltip from './Tooltip';
 import { translateText, generateSpeech, browserSpeak } from '../services/geminiService';
+import { pcmToAudioBuffer } from '../services/audio';
+import { selectWordAt } from '../utils/selectWordAt';
 
 interface ReaderProps {
   book: Book;
@@ -21,6 +23,8 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
   // Live progress; `book.progress` is only the value at open time
   const [progress, setProgress] = useState(book.progress);
   const progressRef = useRef(book.progress);
+  const [progressSaveFailed, setProgressSaveFailed] = useState(false);
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Layout State
   const [columnStyle, setColumnStyle] = useState({ width: '100vw', gap: '0px', padding: '0px' });
@@ -33,6 +37,22 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
   const audioContextRef = useRef<AudioContext | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showControls, setShowControls] = useState(true);
+  // Laying a whole book out in CSS columns can block for seconds, so paint the
+  // chrome and a spinner first, mount the text after that frame, and hide the
+  // spinner once the page count is known
+  const [contentMounted, setContentMounted] = useState(false);
+  const [isLayoutReady, setIsLayoutReady] = useState(false);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const frame = requestAnimationFrame(() => {
+      timer = setTimeout(() => setContentMounted(true), 0);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 
   // Create audio only on a user gesture, and release it when leaving the reader.
   useEffect(() => () => {
@@ -69,6 +89,7 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
       // Rounding is important here
       const pages = Math.round(newScrollWidth / clientWidth);
       setTotalPages(Math.max(1, pages));
+      setIsLayoutReady(true);
       
       // Restore progress (also keeps the place on resize / font change)
       if (progressRef.current > 0) {
@@ -83,6 +104,7 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
 
   // Initial load and resize handler
   useEffect(() => {
+    if (!contentMounted) return;
     calculateLayout();
     const handleResize = () => {
       // Debounce slightly
@@ -91,29 +113,46 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [calculateLayout, fontSize, book.content]); // Recalculate when font or content changes
+  }, [calculateLayout, fontSize, book.content, contentMounted]); // Recalculate when font or content changes
 
-  // Handle Scroll (Page Turn Detection)
+  const persistProgress = useCallback((value: number) => {
+    setProgress(value);
+    setProgressSaveFailed(!updateBookProgress(book.id, value));
+  }, [book.id]);
+
+  // Handle Scroll (Page Turn Detection). Smooth scrolling fires many events
+  // mid-flight, so the page counter updates immediately but the position is
+  // saved only once scrolling has settled (or on exit, see below).
   const handleScroll = useCallback(() => {
-    if (containerRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } = containerRef.current;
-      
-      // Use clientWidth to determine page index directly
-      const page = Math.round(scrollLeft / clientWidth) + 1;
-      
-      if (page !== currentPage) {
-        setCurrentPage(page);
-        
-        // Calculate progress percentage
-        // Avoid division by zero
-        const maxScroll = scrollWidth - clientWidth;
-        const newProgress = maxScroll > 0 ? Math.min(100, (scrollLeft / maxScroll) * 100) : 0;
-        progressRef.current = newProgress;
-        setProgress(newProgress);
-        updateBookProgress(book.id, newProgress);
-      }
+    if (!containerRef.current) return;
+    const { scrollLeft, scrollWidth, clientWidth } = containerRef.current;
+    const page = Math.round(scrollLeft / clientWidth) + 1;
+    if (page !== currentPage) setCurrentPage(page);
+
+    const maxScroll = scrollWidth - clientWidth;
+    progressRef.current = maxScroll > 0 ? Math.min(100, (scrollLeft / maxScroll) * 100) : 0;
+
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      persistTimerRef.current = null;
+      persistProgress(progressRef.current);
+    }, 150);
+  }, [currentPage, persistProgress]);
+
+  // Flush a pending save when leaving the reader
+  const flushProgress = useCallback(() => {
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+      updateBookProgress(book.id, progressRef.current);
     }
-  }, [book.id, currentPage]);
+  }, [book.id]);
+  useEffect(() => flushProgress, [flushProgress]);
+
+  const handleBack = () => {
+    flushProgress();
+    onBack();
+  };
 
   const turnPage = (direction: 'next' | 'prev') => {
     if (!containerRef.current) return;
@@ -175,8 +214,7 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
           ?? new AudioContextClass({ sampleRate: 24000 });
         audioContextRef.current = audioContext;
         await audioContext.resume();
-        const audioBufferData = await generateSpeech(text);
-        const audioBuffer = await audioContext.decodeAudioData(audioBufferData);
+        const audioBuffer = pcmToAudioBuffer(audioContext, await generateSpeech(text));
         const source = audioContext.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(audioContext.destination);
@@ -190,6 +228,17 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
       console.error("Speech failed", e);
       browserSpeak(text);
       setIsPlaying(false);
+    }
+  };
+
+  // Single click on a word selects it and opens the tooltip; a drag selection
+  // is already handled on mouseup, and clicks on whitespace fall through to
+  // the controls toggle below
+  const handleTextClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (window.getSelection()?.toString()) return;
+    if (selectWordAt(e.clientX, e.clientY, e.currentTarget)) {
+      e.stopPropagation();
+      handleSelection();
     }
   };
 
@@ -216,7 +265,7 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
         className={`absolute top-0 left-0 right-0 z-20 transition-transform duration-300 ${showControls ? 'translate-y-0' : '-translate-y-full'}`}
       >
         <header className={`flex items-center justify-between p-4 backdrop-blur-sm border-b shadow-sm ${headerClasses}`}>
-          <button onClick={onBack} className="flex items-center hover:opacity-70 transition-opacity">
+          <button onClick={handleBack} className="flex items-center hover:opacity-70 transition-opacity">
             <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
             <span className="hidden sm:inline">Library</span>
           </button>
@@ -265,6 +314,7 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
           */}
           <div 
              className="font-serif whitespace-pre-wrap"
+             onClick={handleTextClick}
              style={{
                columnWidth: columnStyle.width,
                columnGap: columnStyle.gap,
@@ -279,9 +329,22 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
                textAlign: 'justify'
              }}
           >
-             {book.content}
+             {contentMounted ? book.content : null}
           </div>
         </div>
+
+        {!isLayoutReady && (
+          <div
+            role="status"
+            className={`absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 ${isDarkModeGlobal ? 'bg-slate-900 text-slate-400' : 'bg-[#fdfbf7] text-slate-500'}`}
+          >
+            <svg className="animate-spin h-6 w-6" viewBox="0 0 24 24" aria-hidden="true">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span className="text-sm">Opening book…</span>
+          </div>
+        )}
 
         {/* Click zones for page turning (Desktop/Mouse) */}
         <div className="absolute inset-y-0 left-0 w-12 md:w-20 cursor-pointer hover:bg-black/5 z-0 hidden md:block" title="Previous Page" onClick={(e) => { e.stopPropagation(); turnPage('prev'); }}></div>
@@ -293,6 +356,9 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
         className={`absolute bottom-0 left-0 right-0 p-3 text-center text-xs z-20 transition-transform duration-300 ${showControls ? 'translate-y-0' : 'translate-y-full'} ${isDarkModeGlobal ? 'text-slate-500 bg-slate-900/90' : 'text-slate-400 bg-white/90'} border-t ${isDarkModeGlobal ? 'border-slate-800' : 'border-gray-100'}`}
       >
         Page {currentPage} of {totalPages} • {formatProgress(progress)}
+        {progressSaveFailed && (
+          <span className="ml-2 text-red-500">• Progress not saved: browser storage is full</span>
+        )}
       </div>
 
       <Tooltip 

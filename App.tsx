@@ -19,7 +19,8 @@ const App: React.FC = () => {
   };
 
   const handleBack = () => {
-    // Refresh library to show updated progress for the book we just closed
+    // The reader flushes its reading position before calling this, so the
+    // library can be re-read synchronously to show updated progress
     refreshLibrary();
     setCurrentBook(null);
   };

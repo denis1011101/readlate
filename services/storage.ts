@@ -51,12 +51,15 @@ export const deleteBook = (id: string): void => {
   localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
 };
 
-export const updateBookProgress = (id: string, progress: number): void => {
+/** Returns false when the position could not be persisted (e.g. storage quota). */
+export const updateBookProgress = (id: string, progress: number): boolean => {
   const map = getProgressMap();
   map[id] = progress;
   try {
     localStorage.setItem(PROGRESS_KEY, JSON.stringify(map));
+    return true;
   } catch (e) {
     console.error("Could not save reading progress", e);
+    return false;
   }
 };

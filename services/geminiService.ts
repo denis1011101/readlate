@@ -1,4 +1,5 @@
 import { GoogleGenAI, Modality } from "@google/genai";
+import { parsePcmMimeType, PcmAudio } from "./audio";
 
 // Initialize Gemini Client
 // In a real production app, ensure API key handling is secure.
@@ -23,9 +24,9 @@ export const translateText = async (text: string): Promise<string> => {
 
 /**
  * Converts text to speech using Gemini TTS.
- * Returns a Base64 audio string or Blob URL.
+ * Returns raw 16-bit PCM plus its sample rate (see pcmToAudioBuffer).
  */
-export const generateSpeech = async (text: string): Promise<ArrayBuffer> => {
+export const generateSpeech = async (text: string): Promise<PcmAudio> => {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
@@ -40,7 +41,8 @@ export const generateSpeech = async (text: string): Promise<ArrayBuffer> => {
       },
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    const inlineData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+    const base64Audio = inlineData?.data;
     
     if (!base64Audio) {
       throw new Error("No audio data received");
@@ -53,7 +55,7 @@ export const generateSpeech = async (text: string): Promise<ArrayBuffer> => {
     for (let i = 0; i < len; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
-    return bytes.buffer;
+    return { data: bytes.buffer, ...parsePcmMimeType(inlineData?.mimeType) };
 
   } catch (error) {
     console.error("TTS Error:", error);
