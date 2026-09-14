@@ -101,3 +101,28 @@ it('tells the reader when progress could not be saved', () => {
     vi.useRealTimers();
   }
 });
+
+it('does not leave silently when the final save fails', () => {
+  vi.useFakeTimers();
+  try {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('QuotaExceededError'); });
+    const onBack = vi.fn();
+    const book = { id: 'book', title: 'Book', content: 'Text', progress: 0, createdAt: 0 };
+    const { container } = render(
+      <Reader book={book} onBack={onBack} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} />,
+    );
+    const scroller = container.querySelector('.overflow-x-auto') as HTMLDivElement;
+    Object.defineProperty(scroller, 'clientWidth', { value: 1000 });
+    Object.defineProperty(scroller, 'scrollWidth', { value: 3000 });
+    Object.defineProperty(scroller, 'scrollLeft', { value: 1000, writable: true });
+    fireEvent.scroll(scroller);
+    // Leave before the debounce fires: the flush fails, so we stay and warn
+    fireEvent.click(screen.getByRole('button', { name: /Library/ }));
+    expect(onBack).not.toHaveBeenCalled();
+    expect(screen.getByText(/click Library again/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Library/ }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});

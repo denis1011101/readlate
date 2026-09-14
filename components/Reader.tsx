@@ -4,7 +4,7 @@ import { updateBookProgress } from '../services/storage';
 import Tooltip from './Tooltip';
 import { translateText, generateSpeech, browserSpeak } from '../services/geminiService';
 import { pcmToAudioBuffer } from '../services/audio';
-import { selectWordAt } from '../utils/selectWordAt';
+import { selectWordAt, snapSelectionToWords } from '../utils/selectWordAt';
 
 interface ReaderProps {
   book: Book;
@@ -24,6 +24,9 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
   const [progress, setProgress] = useState(book.progress);
   const progressRef = useRef(book.progress);
   const [progressSaveFailed, setProgressSaveFailed] = useState(false);
+  const [leaveAnyway, setLeaveAnyway] = useState(false);
+  const textRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Layout State
@@ -139,19 +142,23 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
     }, 150);
   }, [currentPage, persistProgress]);
 
-  // Flush a pending save when leaving the reader
-  const flushProgress = useCallback(() => {
-    if (persistTimerRef.current) {
-      clearTimeout(persistTimerRef.current);
-      persistTimerRef.current = null;
-      updateBookProgress(book.id, progressRef.current);
-    }
-  }, [book.id]);
-  useEffect(() => flushProgress, [flushProgress]);
+  // Flush a pending save when leaving the reader; true if nothing was lost
+  const flushProgress = useCallback((): boolean => {
+    if (!persistTimerRef.current) return !progressSaveFailed;
+    clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = null;
+    return updateBookProgress(book.id, progressRef.current);
+  }, [book.id, progressSaveFailed]);
+  useEffect(() => () => { flushProgress(); }, [flushProgress]);
 
+  // If the position can't be saved, say so and let a second click leave anyway
   const handleBack = () => {
-    flushProgress();
-    onBack();
+    if (flushProgress() || leaveAnyway) {
+      onBack();
+      return;
+    }
+    setProgressSaveFailed(true);
+    setLeaveAnyway(true);
   };
 
   const turnPage = (direction: 'next' | 'prev') => {
@@ -166,6 +173,7 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
   };
 
   const handleSelection = useCallback(() => {
+    if (textRef.current) snapSelectionToWords(textRef.current);
     const winSelection = window.getSelection();
     if (!winSelection || winSelection.isCollapsed || !containerRef.current) {
       return; 
@@ -230,6 +238,20 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
       setIsPlaying(false);
     }
   };
+
+  // While the mouse is down inside the text, keep the growing selection snapped to words
+  useEffect(() => {
+    const onSelectionChange = () => {
+      if (isDraggingRef.current && textRef.current) snapSelectionToWords(textRef.current);
+    };
+    const onMouseUp = () => { isDraggingRef.current = false; };
+    document.addEventListener('selectionchange', onSelectionChange);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('selectionchange', onSelectionChange);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, []);
 
   // Single click on a word selects it and opens the tooltip; a drag selection
   // is already handled on mouseup, and clicks on whitespace fall through to
@@ -313,8 +335,10 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
             - Padding on this div aligns the *first* page correctly.
           */}
           <div 
+             ref={textRef}
              className="font-serif whitespace-pre-wrap"
              onClick={handleTextClick}
+             onMouseDown={() => { isDraggingRef.current = true; }}
              style={{
                columnWidth: columnStyle.width,
                columnGap: columnStyle.gap,
@@ -357,7 +381,9 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
       >
         Page {currentPage} of {totalPages} • {formatProgress(progress)}
         {progressSaveFailed && (
-          <span className="ml-2 text-red-500">• Progress not saved: browser storage is full</span>
+          <span className="ml-2 text-red-500">
+            • Progress not saved: browser storage is full{leaveAnyway && ' — click Library again to leave anyway'}
+          </span>
         )}
       </div>
 

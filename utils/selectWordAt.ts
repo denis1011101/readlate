@@ -47,9 +47,54 @@ export const selectWordAt = (x: number, y: number, root: Node): boolean => {
   if (!caret || !root.contains(caret.node)) return false;
   const range = wordRangeAt(caret.node, caret.offset);
   if (!range) return false;
+  // caretAt returns the nearest caret even for clicks on empty space, so make
+  // sure the point actually lands on the word's glyphs
+  const hit = Array.from(range.getClientRects())
+    .some(r => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
+  if (!hit) return false;
   const selection = window.getSelection();
   if (!selection) return false;
   selection.removeAllRanges();
   selection.addRange(range);
+  return true;
+};
+
+const isText = (n: Node | null): n is Text => !!n && n.nodeType === Node.TEXT_NODE;
+
+/**
+ * Snaps the current selection outward to word boundaries (like a double-click
+ * drag) and drops whitespace at either end. Returns true if it changed.
+ */
+export const snapSelectionToWords = (root: Node): boolean => {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
+  const range = selection.getRangeAt(0);
+  const { startContainer, endContainer } = range;
+  if (!isText(startContainer) || !isText(endContainer)) return false;
+  if (!root.contains(startContainer) || !root.contains(endContainer)) return false;
+
+  let start = range.startOffset;
+  let end = range.endOffset;
+  const startText = startContainer.data;
+  const endText = endContainer.data;
+  const sameNode = startContainer === endContainer;
+
+  // Shed leading/trailing whitespace & punctuation, then grow to word edges
+  while (start < startText.length && !WORD_CHAR.test(startText[start]) && (!sameNode || start < end)) start++;
+  while (end > 0 && !WORD_CHAR.test(endText[end - 1]) && (!sameNode || end > start)) end--;
+  if (sameNode && start >= end) return false;
+  while (start > 0 && WORD_CHAR.test(startText[start - 1])) start--;
+  while (end < endText.length && WORD_CHAR.test(endText[end])) end++;
+
+  if (start === range.startOffset && end === range.endOffset) return false;
+
+  // Keep the drag direction so the browser continues extending from the right end
+  const backwards = selection.anchorNode === endContainer && selection.anchorOffset === range.endOffset
+    && !(selection.focusNode === endContainer && selection.focusOffset === range.endOffset);
+  if (backwards) {
+    selection.setBaseAndExtent(endContainer, end, startContainer, start);
+  } else {
+    selection.setBaseAndExtent(startContainer, start, endContainer, end);
+  }
   return true;
 };
