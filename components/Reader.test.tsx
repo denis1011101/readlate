@@ -126,3 +126,56 @@ it('does not leave silently when the final save fails', () => {
     vi.useRealTimers();
   }
 });
+
+const mountScroller = () => {
+  const book = { id: 'book', title: 'Book', content: 'Text', progress: 0, createdAt: 0 };
+  const { container } = render(
+    <Reader book={book} onBack={() => undefined} isDarkModeGlobal={false} toggleGlobalTheme={() => undefined} />,
+  );
+  const scroller = container.querySelector('.overflow-x-auto') as HTMLDivElement;
+  Object.defineProperty(scroller, 'clientWidth', { value: 1000 });
+  Object.defineProperty(scroller, 'scrollWidth', { value: 5000 });
+  let scrollLeft = 0;
+  Object.defineProperty(scroller, 'scrollLeft', { get: () => scrollLeft, set: (v) => { scrollLeft = v; } });
+  const scrollTo = vi.fn((opts: ScrollToOptions) => { scrollLeft = opts.left ?? scrollLeft; });
+  scroller.scrollTo = scrollTo as unknown as typeof scroller.scrollTo;
+  return { scroller, scrollTo, setScrollLeft: (v: number) => { scrollLeft = v; } };
+};
+
+it('turns exactly one page per wheel gesture, ignoring trackpad inertia', () => {
+  vi.useFakeTimers();
+  try {
+    const { scroller, scrollTo } = mountScroller();
+    // A trackpad swipe: many events, decaying deltas
+    for (const deltaX of [40, 30, 20, 10, 5, 2]) {
+      fireEvent.wheel(scroller, { deltaX, deltaY: 0 });
+      vi.advanceTimersByTime(30);
+    }
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenLastCalledWith({ left: 1000, behavior: 'smooth' });
+    // After the stream goes quiet, the next gesture turns again (vertical wheel too)
+    vi.advanceTimersByTime(250);
+    fireEvent.wheel(scroller, { deltaX: 0, deltaY: 100 });
+    expect(scrollTo).toHaveBeenCalledTimes(2);
+    expect(scrollTo).toHaveBeenLastCalledWith({ left: 2000, behavior: 'smooth' });
+    vi.advanceTimersByTime(250);
+    fireEvent.wheel(scroller, { deltaX: -50, deltaY: 0 });
+    expect(scrollTo).toHaveBeenLastCalledWith({ left: 1000, behavior: 'smooth' });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('pages with the keyboard and snaps to page boundaries', () => {
+  const { scrollTo, setScrollLeft } = mountScroller();
+  setScrollLeft(1300); // mid-scroll: nearest page is 2 (left 1000)
+  fireEvent.keyDown(document, { key: 'ArrowRight' });
+  expect(scrollTo).toHaveBeenLastCalledWith({ left: 2000, behavior: 'smooth' });
+  fireEvent.keyDown(document, { key: 'ArrowLeft' });
+  expect(scrollTo).toHaveBeenLastCalledWith({ left: 1000, behavior: 'smooth' });
+  fireEvent.keyDown(document, { key: ' ' });
+  expect(scrollTo).toHaveBeenLastCalledWith({ left: 2000, behavior: 'smooth' });
+  setScrollLeft(0);
+  fireEvent.keyDown(document, { key: 'PageUp' });
+  expect(scrollTo).toHaveBeenLastCalledWith({ left: 0, behavior: 'smooth' });
+});

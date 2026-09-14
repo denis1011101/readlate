@@ -161,16 +161,56 @@ const Reader: React.FC<ReaderProps> = ({ book, onBack, isDarkModeGlobal, toggleG
     setLeaveAnyway(true);
   };
 
-  const turnPage = (direction: 'next' | 'prev') => {
+  // Always land on a page boundary, even if the container was mid-scroll
+  const turnPage = useCallback((direction: 'next' | 'prev') => {
     if (!containerRef.current) return;
-    const clientWidth = containerRef.current.clientWidth;
-    const newScrollLeft = containerRef.current.scrollLeft + (direction === 'next' ? clientWidth : -clientWidth);
-    
+    const { scrollLeft, clientWidth } = containerRef.current;
+    const page = Math.round(scrollLeft / clientWidth) + (direction === 'next' ? 1 : -1);
     containerRef.current.scrollTo({
-      left: newScrollLeft,
+      left: Math.max(0, page) * clientWidth,
       behavior: 'smooth'
     });
-  };
+  }, []);
+
+  // Wheel / trackpad: one gesture turns exactly one page. Trackpads keep
+  // emitting inertia events after the fingers lift, so stay locked until the
+  // stream goes quiet instead of using a fixed cooldown.
+  const wheelLockRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) return; // pinch-zoom
+      e.preventDefault();
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      const locked = wheelLockRef.current !== null;
+      if (wheelLockRef.current) clearTimeout(wheelLockRef.current);
+      wheelLockRef.current = setTimeout(() => { wheelLockRef.current = null; }, 200);
+      if (locked || Math.abs(delta) < 4) return;
+      turnPage(delta > 0 ? 'next' : 'prev');
+    };
+    container.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', onWheel);
+      if (wheelLockRef.current) clearTimeout(wheelLockRef.current);
+    };
+  }, [turnPage]);
+
+  // Keyboard paging
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName)) return;
+      switch (e.key) {
+        case 'ArrowRight': case 'PageDown': case ' ':
+          e.preventDefault(); turnPage('next'); break;
+        case 'ArrowLeft': case 'PageUp':
+          e.preventDefault(); turnPage('prev'); break;
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [turnPage]);
 
   const handleSelection = useCallback(() => {
     if (textRef.current) snapSelectionToWords(textRef.current);
